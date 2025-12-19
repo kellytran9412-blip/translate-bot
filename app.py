@@ -37,7 +37,7 @@ def handle_message(event):
     try:
         # Gọi model Gemini 3 Pro Preview
         response = client.models.generate_content(
-            model="gemini-2.0-flash", # Gợi ý: Nếu 3-pro-preview lỗi 404, dùng 2.0-flash đang rất ổn định
+            model="gemini-1.5-flash", # Gợi ý: Nếu 3-pro-preview lỗi 404, dùng 2.0-flash đang rất ổn định
             contents=user_text,
             config={
                 "system_instruction": instruction,
