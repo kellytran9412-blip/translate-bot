@@ -1,27 +1,21 @@
 import os
-import google.generativeai as genai
 from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
+from google import genai
 
 app = Flask(__name__)
 
-# Cấu hình API
-genai.configure(api_key=os.environ.get('GEMINI_API_KEY'))
-line_bot_api = LineBotApi(os.environ.get('LINE_CHANNEL_ACCESS_TOKEN'))
-handler = WebhookHandler(os.environ.get('LINE_CHANNEL_SECRET'))
+# Cấu hình biến môi trường trên Render
+GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
+LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
+LINE_CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET')
 
-# Thiết lập Model tối ưu cho tiếng Trung Đài Loan
-model = genai.GenerativeModel(
-    model_name="gemini-1.5-flash",
-    system_instruction=(
-        "You are a professional translator between Vietnamese and Traditional Chinese (Taiwan). "
-        "If the input is Vietnamese, translate it to Traditional Chinese as used in Taiwan. "
-        "If the input is Chinese, translate it to Vietnamese. "
-        "Maintain a natural, polite tone. Only provide the translation text without explanations."
-    )
-)
+# Khởi tạo Client theo chuẩn mới
+client = genai.Client(api_key=GEMINI_API_KEY)
+line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
+handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
 @app.route("/callback", methods=['POST'])
 def callback():
@@ -36,26 +30,32 @@ def callback():
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
     user_text = event.message.text
+    
+    # Thiết lập chỉ dẫn hệ thống (System Instruction)
+    instruction = "Bạn là chuyên gia dịch thuật Đài Loan. Dịch Việt sang Trung Phồn thể và ngược lại. Chỉ trả về bản dịch."
+    
     try:
-        # Sử dụng stream=False để nhận phản hồi nhanh gọn cho chat
-        response = model.generate_content(user_text)
-        
-        if response and response.text:
-            reply_text = response.text.strip()
-        else:
-            reply_text = "抱歉，無法處理此內容。/ Xin lỗi, không thể xử lý nội dung này."
-
-        line_bot_api.reply_message(
-            event.reply_token,
-            TextSendMessage(text=reply_text)
+        # Gọi model Gemini 3 Pro Preview
+        response = client.models.generate_content(
+            model="gemini-2.0-flash", # Gợi ý: Nếu 3-pro-preview lỗi 404, dùng 2.0-flash đang rất ổn định
+            contents=user_text,
+            config={
+                "system_instruction": instruction,
+                "temperature": 0.3 # Thấp để dịch thuật chính xác hơn
+            }
         )
+        
+        reply_text = response.text.strip()
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply_text))
+        
     except Exception as e:
         print(f"Error: {e}")
-        # Không báo lỗi AI bận nữa mà báo thử lại
+        # Phản hồi lỗi thân thiện
         line_bot_api.reply_message(
             event.reply_token,
-            TextSendMessage(text="系統繁忙，請稍後再試。/ Hệ thống bận, vui lòng thử lại sau.")
+            TextSendMessage(text="Hệ thống đang bận, vui lòng thử lại sau!")
         )
 
 if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 5000)))
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
