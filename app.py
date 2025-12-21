@@ -1,22 +1,21 @@
 import os
-from flask import Flask, request, abort, send_from_directory
+from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
-import google.generativeai as genai  # Thư viện chuẩn
-from docx import Document
+import google.generativeai as genai
 
 app = Flask(__name__)
 
-# Cấu hình
+# 1. Cấu hình thông số từ Environment Variables
 line_bot_api = LineBotApi(os.getenv('LINE_CHANNEL_ACCESS_TOKEN'))
 handler = WebhookHandler(os.getenv('LINE_CHANNEL_SECRET'))
 
-# Cấu hình Gemini TRIỆT ĐỂ
+# 2. Cấu hình Gemini - Dùng thư viện ổn định
 genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
 
-# Giải quyết 404 bằng cách gọi trực tiếp tên model chuẩn của Google
-model = genai.GenerativeModel(model_name='gemini-1.5-flash')
+# Khởi tạo model theo cách truyền thống để tránh lỗi 404 v1beta
+model = genai.GenerativeModel('gemini-1.5-flash')
 
 @app.route("/callback", methods=['POST'])
 def callback():
@@ -31,19 +30,35 @@ def callback():
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
     user_text = event.message.text
-    prompt = f"Dịch văn bản sau sang tiếng Trung Phồn thể nếu là tiếng Việt, và ngược lại. Chỉ trả về bản dịch: {user_text}"
+    
+    # Prompt dịch thuật song ngữ
+    prompt = (
+        f"Dịch văn bản sau: Nếu là tiếng Việt thì dịch sang tiếng Trung Phồn thể (Taiwan). "
+        f"Nếu là tiếng Trung thì dịch sang tiếng Việt. "
+        f"Chỉ trả về bản dịch, không giải thích: {user_text}"
+    )
 
     try:
-        # Gọi Gemini
+        # Thực hiện gọi AI
         response = model.generate_content(prompt)
-        translated_text = response.text.strip()
         
-        # Phản hồi tin nhắn văn bản
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=translated_text))
-        
+        if response.text:
+            reply_text = response.text.strip()
+        else:
+            reply_text = "AI không phản hồi nội dung. Hãy thử lại."
+            
     except Exception as e:
-        print(f"Lỗi thực thi: {e}")
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="Hệ thống bận, hãy thử lại sau."))
+        error_msg = str(e)
+        print(f"Lỗi thực tế tại Log: {error_msg}")
+        
+        if "404" in error_msg:
+            reply_text = "Lỗi kết nối API (404). Đang chờ hệ thống cập nhật lại phiên bản."
+        elif "429" in error_msg:
+            reply_text = "Hạn mức miễn phí đã hết, vui lòng đợi 1 phút."
+        else:
+            reply_text = "Hệ thống bận, vui lòng thử lại sau."
+
+    line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply_text))
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
