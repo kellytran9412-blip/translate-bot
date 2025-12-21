@@ -37,7 +37,7 @@ def handle_message(event):
         "QUY TẮC BẮT BUỘC:\n"
         "1. Nếu người dùng nhập tiếng Trung: Hiện dòng CH:. Hiện dòng VN:.\n"
         "2. Nếu người dùng nhập tiếng Việt: Hiện dòng VN:. Hiện dòng CH:.\n"
-        "3. Nếu người dùng nhập tiếng Việt Luôn tự sửa lỗi chính tả và thêm dấu cho tiếng Việt trước khi dịch: Hiện dòng VN:. Hiện dòng CH:.\n""
+        "Luôn tự sửa lỗi chính tả và thêm dấu cho tiếng Việt trước khi dịch nếu có."
     )
 
     try:
