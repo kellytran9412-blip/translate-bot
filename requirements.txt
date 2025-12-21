@@ -1,5 +1,4 @@
-flask
+google-generativeai
 line-bot-sdk
-groq
+flask
 gunicorn
-python-docx
