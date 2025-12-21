@@ -3,19 +3,16 @@ from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
-import google.generativeai as genai
+from groq import Groq
 
 app = Flask(__name__)
 
-# 1. Cấu hình thông số từ Environment Variables
+# 1. Cấu hình thông số từ Render Environment Variables
 line_bot_api = LineBotApi(os.getenv('LINE_CHANNEL_ACCESS_TOKEN'))
 handler = WebhookHandler(os.getenv('LINE_CHANNEL_SECRET'))
 
-# 2. Cấu hình Gemini - Dùng thư viện ổn định
-genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
-
-# Khởi tạo model theo cách truyền thống để tránh lỗi 404 v1beta
-model = genai.GenerativeModel('gemini-1.5-flash')
+# Cấu hình Groq
+client = Groq(api_key=os.getenv('GROQ_API_KEY'))
 
 @app.route("/callback", methods=['POST'])
 def callback():
@@ -31,34 +28,34 @@ def callback():
 def handle_message(event):
     user_text = event.message.text
     
-    # Prompt dịch thuật song ngữ
-    prompt = (
-        f"Dịch văn bản sau: Nếu là tiếng Việt thì dịch sang tiếng Trung Phồn thể (Taiwan). "
-        f"Nếu là tiếng Trung thì dịch sang tiếng Việt. "
-        f"Chỉ trả về bản dịch, không giải thích: {user_text}"
-    )
-
     try:
-        # Thực hiện gọi AI
-        response = model.generate_content(prompt)
+        # 2. Gọi Groq AI để dịch thuật
+        chat_completion = client.chat.completions.create(
+            messages=[
+                {
+                    "role": "system",
+                    "content": "Bạn là chuyên gia dịch thuật. Nếu thấy tiếng Việt, hãy dịch sang Trung Phồn thể (Taiwan). Nếu thấy tiếng Trung, hãy dịch sang tiếng Việt. Chỉ trả về bản dịch, không giải thích."
+                },
+                {
+                    "role": "user",
+                    "content": user_text,
+                }
+            ],
+            model="llama-3.3-70b-versatile",
+            temperature=0.2, # Độ chính xác cao
+        )
         
-        if response.text:
-            reply_text = response.text.strip()
-        else:
-            reply_text = "AI không phản hồi nội dung. Hãy thử lại."
-            
-    except Exception as e:
-        error_msg = str(e)
-        print(f"Lỗi thực tế tại Log: {error_msg}")
-        
-        if "404" in error_msg:
-            reply_text = "Lỗi kết nối API (404). Đang chờ hệ thống cập nhật lại phiên bản."
-        elif "429" in error_msg:
-            reply_text = "Hạn mức miễn phí đã hết, vui lòng đợi 1 phút."
-        else:
-            reply_text = "Hệ thống bận, vui lòng thử lại sau."
+        reply_text = chat_completion.choices[0].message.content.strip()
 
-    line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply_text))
+    except Exception as e:
+        print(f"Lỗi Groq: {e}")
+        reply_text = "Hệ thống dịch thuật đang bận, vui lòng thử lại sau."
+
+    # 3. Gửi tin nhắn trả lời
+    line_bot_api.reply_message(
+        event.reply_token,
+        TextSendMessage(text=reply_text)
+    )
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
