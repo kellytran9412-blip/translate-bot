@@ -8,19 +8,13 @@ from groq import Groq
 app = Flask(__name__)
 
 # --- CẤU HÌNH ---
-# Hãy đảm bảo bạn đã nhập GROQ_API_KEY, LINE_CHANNEL_ACCESS_TOKEN, LINE_CHANNEL_SECRET trên Render
 line_bot_api = LineBotApi(os.getenv('LINE_CHANNEL_ACCESS_TOKEN'))
 handler = WebhookHandler(os.getenv('LINE_CHANNEL_SECRET'))
 client = Groq(api_key=os.getenv('GROQ_API_KEY'))
 
-# --- ĐƯỜNG DẪN GIỮ 24/7 ---
 @app.route("/", methods=['GET'])
 def index():
-    return "Bot is running 24/7", 200
-
-@app.route("/health", methods=['GET'])
-def health_check():
-    return "OK", 200
+    return "Bot Dịch Thuật Việt - Trung Phồn thể đang chạy!", 200
 
 @app.route("/callback", methods=['POST'])
 def callback():
@@ -35,22 +29,33 @@ def callback():
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
     user_text = event.message.text
+    
+    # SYSTEM INSTRUCTION: Chỉ tập trung Việt và Trung Phồn Thể
+    system_instruction = (
+        "Bạn là chuyên gia dịch thuật song ngữ Việt - Trung Phồn thể (Taiwan). "
+        "Nhiệm vụ: \n"
+        "1. Nếu người dùng nhập tiếng Việt (kể cả không dấu hoặc sai chính tả), hãy dịch sang tiếng Trung Phồn thể.\n"
+        "2. Nếu người dùng nhập tiếng Trung, hãy dịch sang tiếng Việt chuẩn.\n"
+        "3. Trả về kết quả theo định dạng:\n"
+        "CH: [Bản dịch Trung Phồn thể]\n"
+        "VN: [Bản dịch tiếng Việt chuẩn có dấu]\n"
+        "Quy tắc: Chỉ trả về 2 dòng này, không giải thích thêm."
+    )
+
     try:
         chat_completion = client.chat.completions.create(
             messages=[
-                {
-                    "role": "system",
-                    "content": "Bạn là chuyên gia dịch thuật. Dịch sang tiếng Trung Phồn thể (Taiwan) nếu thấy tiếng Việt, và ngược lại. Chỉ trả về bản dịch."
-                },
+                {"role": "system", "content": system_instruction},
                 {"role": "user", "content": user_text}
             ],
             model="llama-3.3-70b-versatile",
             temperature=0.1,
         )
         reply_text = chat_completion.choices[0].message.content.strip()
+        
     except Exception as e:
         print(f"Lỗi: {e}")
-        reply_text = "Hệ thống đang bận, vui lòng thử lại sau."
+        reply_text = "Hệ thống đang bảo trì, vui lòng thử lại sau."
 
     line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply_text))
 
