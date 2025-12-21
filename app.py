@@ -14,7 +14,7 @@ client = Groq(api_key=os.getenv('GROQ_API_KEY'))
 
 @app.route("/", methods=['GET'])
 def index():
-    return "Bot Dịch Thuật Việt - Trung Phồn thể đang chạy!", 200
+    return "Bot Dịch Thuật Việt - Trung đang chạy!", 200
 
 @app.route("/callback", methods=['POST'])
 def callback():
@@ -30,16 +30,16 @@ def callback():
 def handle_message(event):
     user_text = event.message.text
     
-    # SYSTEM INSTRUCTION: Chỉ tập trung Việt và Trung Phồn Thể
+    # SYSTEM PROMPT CỰC MẠNH: Buộc phải dịch qua lại
     system_instruction = (
-        "Bạn là chuyên gia dịch thuật song ngữ Việt - Trung Phồn thể (Taiwan). "
-        "Nhiệm vụ: \n"
-        "1. Nếu người dùng nhập tiếng Việt (kể cả không dấu hoặc sai chính tả), hãy dịch sang tiếng Trung Phồn thể.\n"
-        "2. Nếu người dùng nhập tiếng Trung, hãy dịch sang tiếng Việt chuẩn.\n"
-        "3. Trả về kết quả theo định dạng:\n"
-        "CH: [Bản dịch Trung Phồn thể]\n"
-        "VN: [Bản dịch tiếng Việt chuẩn có dấu]\n"
-        "Quy tắc: Chỉ trả về 2 dòng này, không giải thích thêm."
+        "Bạn là máy thông dịch song ngữ Trung Phồn thể (Taiwan) và Việt Nam. "
+        "Nhiệm vụ của bạn là luôn luôn cung cấp bản dịch cho cả hai ngôn ngữ bất kể đầu vào là gì:\n"
+        "- Nếu người dùng nhập tiếng Việt (có dấu hoặc không dấu): Hãy dịch sang Trung Phồn thể.\n"
+        "- Nếu người dùng nhập tiếng Trung: Hãy dịch sang tiếng Việt chuẩn.\n"
+        "Định dạng trả về duy nhất:\n"
+        "🇹🇼 CH: [Bản dịch Trung Phồn thể]\n"
+        "🇻🇳 VN: [Bản dịch tiếng Việt chuẩn có dấu]\n"
+        "Lưu ý: Không lặp lại văn bản của người dùng nếu không cần thiết, chỉ trả về bản dịch chính xác."
     )
 
     try:
@@ -49,13 +49,13 @@ def handle_message(event):
                 {"role": "user", "content": user_text}
             ],
             model="llama-3.3-70b-versatile",
-            temperature=0.1,
+            temperature=0.1, # Giữ độ chính xác tuyệt đối
         )
         reply_text = chat_completion.choices[0].message.content.strip()
         
     except Exception as e:
-        print(f"Lỗi: {e}")
-        reply_text = "Hệ thống đang bảo trì, vui lòng thử lại sau."
+        print(f"Lỗi Groq: {e}")
+        reply_text = "Hệ thống đang bận, bạn vui lòng thử lại nhé!"
 
     line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply_text))
 
