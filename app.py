@@ -41,7 +41,7 @@ def handle_message(event):
         instruction = "Bạn là chuyên gia dịch thuật. Dịch tiếng Trung Phồn thể sang tiếng Việt và ngược lại. Chỉ trả về bản dịch."
         
         # GỌI GEMINI THEO CÚ PHÁP MỚI
-        # response = client.models.generate_content(model="gemini-1.5-flash", contents=user_text)
+        # response = client.models.generate_content(model="gemini-2.5-flash", contents=user_text)
             model="gemini-2.5-flash", 
             contents=f"{instruction}\n\nVăn bản cần dịch: {user_text}"
         )
@@ -81,5 +81,6 @@ def handle_message(event):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     app.run(host="0.0.0.0", port=port)
+
 
 
