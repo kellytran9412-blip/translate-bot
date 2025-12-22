@@ -1,53 +1,36 @@
 import os
-import sys
 from flask import Flask, request, abort
 
-# Import Gemini
-import google.generativeai as genai
-from google.generativeai.types import RequestOptions
+# SỬ DỤNG SDK MỚI NHẤT CỦA GOOGLE
+from google import genai
 
-# Import LINE SDK
+# SDK LINE
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
 
 app = Flask(__name__)
 
-# --- 1. LẤY BIẾN MÔI TRƯỜNG ---
+# 1. CẤU HÌNH BIẾN MÔI TRƯỜNG
 GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
 LINE_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN")
 LINE_SECRET = os.environ.get("LINE_CHANNEL_SECRET")
 
-# Kiểm tra cấu hình
-if not all([GEMINI_KEY, LINE_TOKEN, LINE_SECRET]):
-    print("THIẾU BIẾN MÔI TRƯỜNG! Hãy kiểm tra lại Dashboard Render.")
-    sys.exit(1)
+# 2. KHỞI TẠO CLIENT GEMINI MỚI
+client = genai.Client(api_key=GEMINI_KEY)
 
-# --- 2. CẤU HÌNH GEMINI ---
-genai.configure(api_key=GEMINI_KEY)
-
-# Sử dụng tên model ổn định nhất
-# Nếu vẫn báo 404, bạn có thể thử đổi thành "gemini-1.5-pro"
-MODEL_NAME = "gemini-1.5-flash"
-
-model = genai.GenerativeModel(
-    model_name="gemini-1.5-flash",
-    system_instruction="Bạn là một chuyên gia dịch thuật. Hãy dịch văn bản từ tiếng Trung Phồn thể sang tiếng Việt và ngược lại. Trả về kết quả dịch trực tiếp, văn phong tự nhiên, không kèm theo giải thích."
-)
-
-# --- 3. CẤU HÌNH LINE ---
+# 3. CẤU HÌNH LINE
 line_bot_api = LineBotApi(LINE_TOKEN)
 handler = WebhookHandler(LINE_SECRET)
 
 @app.route("/", methods=['GET'])
 def index():
-    return "Bot dịch thuật đang hoạt động!"
+    return "Bot Gemini SDK Mới đang chạy!"
 
 @app.route("/callback", methods=['POST'])
 def callback():
     signature = request.headers.get('X-Line-Signature')
     body = request.get_data(as_text=True)
-    
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
@@ -57,25 +40,24 @@ def callback():
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
     user_text = event.message.text
-    
     try:
-        # Gọi Gemini một cách đơn giản nhất
-        response = model.generate_content(
-            f"Dịch văn bản sau từ tiếng trung phồn thể sang tiếng Việt và ngược lại: {user_text}",
-            request_options=RequestOptions(api_version='v1')
+        # Cấu hình dịch thuật Phồn thể -> Việt
+        instruction = "Bạn là chuyên gia dịch thuật. Dịch tiếng Trung Phồn thể sang tiếng Việt. Chỉ trả về bản dịch."
+        
+        # GỌI GEMINI THEO CÚ PHÁP MỚI
+        response = client.models.generate_content(
+            model="gemini-1.5-flash",  # Bạn có thể đổi thành "gemini-2.0-flash-exp" nếu muốn thử bản mới hơn
+            contents=f"{instruction}\n\nVăn bản cần dịch: {user_text}"
         )
         
         translated_text = response.text.strip()
         
-        # Phản hồi lại LINE
         line_bot_api.reply_message(
             event.reply_token,
             TextSendMessage(text=translated_text)
         )
-        
     except Exception as e:
-        print(f"LỖI:: {str(e)}")
-        # Nếu lỗi 404 vẫn tiếp diễn, in ra danh sách model khả dụng trong log
+        print(f"Lỗi: {str(e)}")
         line_bot_api.reply_message(
             event.reply_token,
             TextSendMessage(text=f"❌ Lỗi: {str(e)}")
