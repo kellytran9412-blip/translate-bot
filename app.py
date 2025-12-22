@@ -31,7 +31,7 @@ genai.configure(api_key=GEMINI_KEY)
 MODEL_NAME = "gemini-1.5-flash"
 
 model = genai.GenerativeModel(
-    model_name=MODEL_NAME,
+    model_name="gemini-1.5-flash",
     system_instruction="Bạn là một chuyên gia dịch thuật. Hãy dịch văn bản từ tiếng Trung Phồn thể sang tiếng Việt và ngược lại. Trả về kết quả dịch trực tiếp, văn phong tự nhiên, không kèm theo giải thích."
 )
 
@@ -59,9 +59,9 @@ def handle_message(event):
     user_text = event.message.text
     
     try:
-        # Sử dụng API v1 thay vì v1beta để tránh lỗi 404 models
+        # Gọi Gemini một cách đơn giản nhất
         response = model.generate_content(
-            f"Dịch văn bản sau sang tiếng Việt: {user_text}",
+            f"Dịch văn bản sau từ tiếng trung phồn thể sang tiếng Việt và ngược lại: {user_text}",
             request_options=RequestOptions(api_version='v1')
         )
         
@@ -74,11 +74,11 @@ def handle_message(event):
         )
         
     except Exception as e:
-        print(f"LỖI GEMINI: {str(e)}")
+        print(f"LỖI:: {str(e)}")
         # Nếu lỗi 404 vẫn tiếp diễn, in ra danh sách model khả dụng trong log
         line_bot_api.reply_message(
             event.reply_token,
-            TextSendMessage(text="❌ Có lỗi xảy ra khi gọi AI. Vui lòng kiểm tra lại cấu hình model.")
+            TextSendMessage(text=f"❌ Lỗi: {str(e)}")
         )
 
 if __name__ == "__main__":
