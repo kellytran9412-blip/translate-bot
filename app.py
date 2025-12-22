@@ -16,7 +16,7 @@ LINE_SECRET = os.environ.get("LINE_CHANNEL_SECRET")
 genai.configure(api_key=GEMINI_KEY)
 model = genai.GenerativeModel(
     model_name="models/gemini-1.5-flash",
-    system_instruction="Bạn là chuyên gia dịch thuật. Hãy dịch văn bản từ tiếng Trung Phồn thể sang tiếng Việt. Trả về kết quả dịch trực tiếp, tự nhiên, không giải thích."
+    system_instruction="Bạn là chuyên gia dịch thuật. Hãy dịch văn bản từ tiếng Trung Phồn thể sang tiếng Việt và ngược lại. Trả về kết quả dịch trực tiếp, tự nhiên, không giải thích."
 )
 
 line_bot_api = LineBotApi(LINE_TOKEN)
