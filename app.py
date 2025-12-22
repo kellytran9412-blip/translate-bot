@@ -7,12 +7,12 @@ from linebot.models import MessageEvent, TextMessage, TextSendMessage
 
 app = Flask(__name__)
 
-# 1. CẤU HÌNH
+# 1. CẤU HÌNH BIẾN MÔI TRƯỜNG
 GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
 LINE_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN")
 LINE_SECRET = os.environ.get("LINE_CHANNEL_SECRET")
 
-# Khởi tạo Client với API v1
+# 2. KHỞI TẠO CLIENT (Sử dụng SDK mới nhất)
 client = genai.Client(api_key=GEMINI_KEY, http_options={'api_version': 'v1'})
 
 line_bot_api = LineBotApi(LINE_TOKEN)
@@ -20,7 +20,7 @@ handler = WebhookHandler(LINE_SECRET)
 
 @app.route("/", methods=['GET'])
 def index():
-    return "Bot Debug Model đang chạy!"
+    return "Bot Gemini 2.5 Flash is running!"
 
 @app.route("/callback", methods=['POST'])
 def callback():
@@ -37,13 +37,18 @@ def handle_message(event):
     user_text = event.message.text
     
     try:
-        # Cấu hình dịch thuật Phồn thể -> Việt
-        instruction = "Bạn là chuyên gia dịch thuật. Dịch tiếng Trung Phồn thể sang tiếng Việt và ngược lại. Chỉ trả về bản dịch."
-        
-        # GỌI GEMINI THEO CÚ PHÁP MỚI
-        # response = client.models.generate_content(model="gemini-2.5-flash", contents=user_text)
+        # Prompt dịch thuật song ngữ tự động
+        instruction = (
+            "Bạn là chuyên gia dịch thuật Việt - Trung (Phồn thể). "
+            "Nếu là tiếng Trung Phồn thể, hãy dịch sang tiếng Việt. "
+            "Nếu là tiếng Việt, hãy dịch sang tiếng Trung Phồn thể. "
+            "Chỉ trả về bản dịch, không thêm bất kỳ lời giải thích nào."
+        )
+
+        # GỌI ĐÍCH DANH MODEL 2.5 FLASH
+        response = client.models.generate_content(
             model="gemini-2.5-flash", 
-            contents=f"{instruction}\n\nVăn bản cần dịch: {user_text}"
+            contents=f"{instruction}\n\nVăn bản: {user_text}"
         )
         
         translated_text = response.text.strip()
@@ -56,31 +61,19 @@ def handle_message(event):
     except Exception as e:
         error_msg = str(e)
         print(f"Lỗi: {error_msg}")
-
-        # NẾU LỖI 404, QUÉT DANH SÁCH MODEL KHẢ DỤNG
-        if "404" in error_msg or "not found" in error_msg.lower():
+        
+        # Nếu model 2.5 chưa khả dụng, Bot sẽ báo danh sách model bạn ĐANG CÓ
+        if "404" in error_msg:
             try:
-                available_models = []
-                # Lấy danh sách các model mà API Key này được phép dùng
-                for m in client.models.list():
-                    # Chỉ lấy tên ngắn gọn (ví dụ: gemini-1.5-flash)
-                    name = m.name.replace("models/", "")
-                    available_models.append(name)
-                
-                debug_info = "❌ Lỗi 404: Model không khớp.\n\n"
-                debug_info += "✅ Các version bạn CÓ THỂ dùng là:\n"
-                debug_info += "\n".join(available_models[:10]) # Lấy 10 cái đầu tiên
-                debug_info += "\n\nHãy copy 1 tên ở trên và sửa vào dòng 'model=' trong app.py"
-                
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text=debug_info))
-            except Exception as list_error:
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"❌ Không thể lấy danh sách model: {str(list_error)}"))
+                available = [m.name.replace("models/", "") for m in client.models.list()]
+                msg = f"❌ Phiên bản 2.5 Flash chưa khả dụng với Key này.\n\n✅ Version bạn nên dùng là:\n" + "\n".join(available[:5])
+            except:
+                msg = "❌ Lỗi 404: Không tìm thấy model. Vui lòng kiểm tra lại API Key."
         else:
-            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"❌ Lỗi hệ thống: {error_msg}"))
+            msg = f"❌ Lỗi: {error_msg}"
+            
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=msg))
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     app.run(host="0.0.0.0", port=port)
-
-
-
