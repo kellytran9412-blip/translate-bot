@@ -46,7 +46,7 @@ def handle_message(event):
         
         # GỌI GEMINI THEO CÚ PHÁP MỚI
         # response = client.models.generate_content(model="gemini-1.5-flash", contents=user_text)
-            model="gemini-1.5-flash",  # Bạn có thể đổi thành "gemini-2.0-flash-exp" nếu muốn thử bản mới hơn
+            model="gemini-1.5-flash"
             contents=f"{instruction}\n\nVăn bản cần dịch: {user_text}"
         )
         
@@ -66,3 +66,4 @@ def handle_message(event):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     app.run(host="0.0.0.0", port=port)
+
