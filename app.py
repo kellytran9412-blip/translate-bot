@@ -39,7 +39,7 @@ def handle_message(event):
     try:
         # Thử gọi model mặc định
         response = client.models.generate_content(
-            model="gemini-1.5-flash",
+            model="gemini-2.5-flash",
             contents=f"Dịch sang tiếng Việt: {user_text}"
         )
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=response.text))
@@ -72,3 +72,4 @@ def handle_message(event):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     app.run(host="0.0.0.0", port=port)
+
