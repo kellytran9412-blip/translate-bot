@@ -39,7 +39,7 @@ def handle_message(event):
     try:
         # Gọi Gemini dịch thuật
         response = client.models.generate_content(
-            model="gemini-1.5-flash",
+           model="models/gemini-1.5-flash",
             contents=f"Dịch tiếng Trung Phồn thể sang tiếng Việt và ngược lại, trả về kết quả trực tiếp: {user_text}"
         )
         
@@ -59,3 +59,4 @@ def handle_message(event):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     app.run(host="0.0.0.0", port=port)
+
