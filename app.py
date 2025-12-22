@@ -37,12 +37,21 @@ def handle_message(event):
     user_text = event.message.text
     
     try:
-        # Thử gọi model mặc định
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=f"Dịch sang tiếng Việt: {user_text}"
+        # Cấu hình dịch thuật Phồn thể -> Việt
+        instruction = "Bạn là chuyên gia dịch thuật. Dịch tiếng Trung Phồn thể sang tiếng Việt và ngược lại. Chỉ trả về bản dịch."
+        
+        # GỌI GEMINI THEO CÚ PHÁP MỚI
+        # response = client.models.generate_content(model="gemini-1.5-flash", contents=user_text)
+            model="gemini-2.5-flash", 
+            contents=f"{instruction}\n\nVăn bản cần dịch: {user_text}"
         )
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=response.text))
+        
+        translated_text = response.text.strip()
+        
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text=translated_text)
+        )
 
     except Exception as e:
         error_msg = str(e)
@@ -72,4 +81,5 @@ def handle_message(event):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     app.run(host="0.0.0.0", port=port)
+
 
