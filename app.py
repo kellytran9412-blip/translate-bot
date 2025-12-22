@@ -2,7 +2,7 @@ import os
 from flask import Flask, request, abort
 
 # SỬ DỤNG SDK MỚI NHẤT CỦA GOOGLE
-from google import genai
+from google import genai  # Thư viện mới dùng 'from google import genai'
 
 # SDK LINE
 from linebot import LineBotApi, WebhookHandler
@@ -17,7 +17,7 @@ LINE_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN")
 LINE_SECRET = os.environ.get("LINE_CHANNEL_SECRET")
 
 # 2. KHỞI TẠO CLIENT GEMINI MỚI
-client = genai.Client(api_key=GEMINI_KEY)
+client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
 
 # 3. CẤU HÌNH LINE
 line_bot_api = LineBotApi(LINE_TOKEN)
@@ -45,7 +45,7 @@ def handle_message(event):
         instruction = "Bạn là chuyên gia dịch thuật. Dịch tiếng Trung Phồn thể sang tiếng Việt. Chỉ trả về bản dịch."
         
         # GỌI GEMINI THEO CÚ PHÁP MỚI
-        response = client.models.generate_content(
+        # response = client.models.generate_content(model="gemini-1.5-flash", contents=user_text)
             model="gemini-1.5-flash",  # Bạn có thể đổi thành "gemini-2.0-flash-exp" nếu muốn thử bản mới hơn
             contents=f"{instruction}\n\nVăn bản cần dịch: {user_text}"
         )
