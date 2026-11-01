@@ -1,4 +1,4 @@
-google-genai
-line-bot-sdk
 flask
+openai
+line-bot-sdk
 gunicorn
