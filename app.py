@@ -44,12 +44,11 @@ TRANSLATION_INSTRUCTION = """Chuyên gia dịch thuật song ngữ Việt - Trun
 - Giữ nguyên tên riêng, số, mã, ngày tháng.
 - Chỉ trả lời duy nhất bản dịch, không thêm chú thích."""
 
-# Cấu hình tối ưu tốc độ
+# Cấu hình an toàn và nhanh cho gemini-1.5-flash
 GEN_CONFIG = types.GenerateContentConfig(
     system_instruction=TRANSLATION_INSTRUCTION,
     max_output_tokens=1500,
-    temperature=0.1,
-    thinking_config=types.ThinkingConfig(thinking_budget=0)  # Tắt suy nghĩ ngầm
+    temperature=0.1
 )
 
 @app.route("/", methods=["GET"])
