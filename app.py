@@ -1,8 +1,9 @@
-
 import os
 import logging
 from flask import Flask, request, abort
-from openai import OpenAI, OpenAIError
+from google import genai
+from google.genai import types
+from google.genai.errors import APIError
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
@@ -13,33 +14,29 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # 1. CẤU HÌNH BIẾN MÔI TRƯỜNG
-OPENAI_KEY = os.environ.get("OPENAI_API_KEY")
+GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
 LINE_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN")
 LINE_SECRET = os.environ.get("LINE_CHANNEL_SECRET")
 
-MODEL = os.environ.get("OPENAI_MODEL", "gpt-6-luna")
+# Mặc định dùng gemini-2.5-flash cho tốc độ phản hồi nhanh
+MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 
-if not all([OPENAI_KEY, LINE_TOKEN, LINE_SECRET]):
+if not all([GEMINI_KEY, LINE_TOKEN, LINE_SECRET]):
     raise RuntimeError(
-        "Thiếu OPENAI_API_KEY, LINE_CHANNEL_ACCESS_TOKEN "
+        "Thiếu GEMINI_API_KEY, LINE_CHANNEL_ACCESS_TOKEN "
         "hoặc LINE_CHANNEL_SECRET"
     )
 
-# 2. KHỞI TẠO OPENAI
-client = OpenAI(
-    api_key=OPENAI_KEY,
-    timeout=30.0,
-    max_retries=1
-)
+# 2. KHỞI TẠO GOOGLE GENAI CLIENT
+client = genai.Client(api_key=GEMINI_KEY)
 
 # 3. KHỞI TẠO LINE BOT
 line_bot_api = LineBotApi(LINE_TOKEN)
 handler = WebhookHandler(LINE_SECRET)
 
-# 4. PROMPT DỊCH THUẬT
+# 4. PROMPT DỊCH THUẬT (SYSTEM INSTRUCTION)
 TRANSLATION_INSTRUCTION = """
-Bạn là chuyên gia dịch thuật tiếng Việt và
-tiếng Trung Phồn thể (Đài Loan).
+Bạn là chuyên gia dịch thuật tiếng Việt và tiếng Trung Phồn thể (Đài Loan).
 
 QUY TẮC:
 1. Nếu văn bản là tiếng Việt:
@@ -47,10 +44,8 @@ QUY TẮC:
 2. Nếu văn bản là tiếng Trung:
    Dịch sang tiếng Việt.
 3. Sử dụng từ ngữ tự nhiên, phổ biến tại Đài Loan.
-4. Dịch chính xác thuật ngữ công ty, nhà máy,
-   nhân sự, lao động và hành chính.
-5. Giữ nguyên tên riêng, mã số, ngày tháng,
-   số tiền và định dạng xuống dòng khi phù hợp.
+4. Dịch chính xác thuật ngữ công ty, nhà máy, nhân sự, lao động và hành chính.
+5. Giữ nguyên tên riêng, mã số, ngày tháng, số tiền và định dạng xuống dòng khi phù hợp.
 6. Không tự ý thêm hoặc bỏ nội dung.
 7. Chỉ trả về bản dịch.
 8. Không giải thích, không thêm tiêu đề.
@@ -86,47 +81,47 @@ def handle_message(event):
         return
 
     try:
-        response = client.responses.create(
+        # Gọi Gemini API với system_instruction và giới hạn token
+        response = client.models.generate_content(
             model=MODEL,
-            instructions=TRANSLATION_INSTRUCTION,
-            input=user_text,
-            max_output_tokens=3000,
-            store=False
+            contents=user_text,
+            config=types.GenerateContentConfig(
+                system_instruction=TRANSLATION_INSTRUCTION,
+                max_output_tokens=3000,
+                temperature=0.2  # Giảm nhiệt độ để bản dịch chính xác, sát nghĩa
+            )
         )
 
-        translated_text = (response.output_text or "").strip()
+        translated_text = (response.text or "").strip()
 
         if not translated_text:
             translated_text = "❌ Không nhận được bản dịch."
 
-        # LINE giới hạn độ dài tin nhắn văn bản.
+        # Giới hạn ký tự tin nhắn của LINE
         if len(translated_text) > 5000:
-            translated_text = (
-                translated_text[:4990] + "\n..."
-            )
+            translated_text = translated_text[:4990] + "\n..."
 
         line_bot_api.reply_message(
             event.reply_token,
             TextSendMessage(text=translated_text)
         )
 
-    except OpenAIError as e:
-        logger.exception("OpenAI API error")
-
+    except APIError as e:
+        logger.exception("Gemini API error")
         error_msg = str(e)
 
-        if "model_not_found" in error_msg or "404" in error_msg:
+        if "404" in error_msg or "not found" in error_msg.lower():
             msg = (
-                "❌ Không tìm thấy model OpenAI.\n"
-                "Hãy kiểm tra OPENAI_MODEL và quyền truy cập API."
+                "❌ Không tìm thấy model Gemini.\n"
+                "Hãy kiểm tra biến GEMINI_MODEL."
             )
-        elif "429" in error_msg:
+        elif "429" in error_msg or "quota" in error_msg.lower():
             msg = (
-                "❌ API đang bị giới hạn hoặc hết hạn mức.\n"
-                "Vui lòng kiểm tra tài khoản OpenAI."
+                "❌ API đang bị giới hạn hoặc hết quota.\n"
+                "Vui lòng kiểm tra tài khoản Google AI Studio."
             )
-        elif "401" in error_msg:
-            msg = "❌ OpenAI API Key không hợp lệ."
+        elif "400" in error_msg and "key" in error_msg.lower():
+            msg = "❌ GEMINI_API_KEY không hợp lệ."
         else:
             msg = "❌ Dịch thuật thất bại. Vui lòng thử lại."
 
@@ -137,14 +132,12 @@ def handle_message(event):
 
     except Exception:
         logger.exception("Unexpected error")
-
         line_bot_api.reply_message(
             event.reply_token,
             TextSendMessage(
                 text="❌ Hệ thống xảy ra lỗi. Vui lòng thử lại."
             )
         )
-
 
 # 7. CHẠY SERVER
 if __name__ == "__main__":
