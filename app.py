@@ -25,13 +25,14 @@ logger = logging.getLogger(__name__)
 GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
 LINE_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN")
 LINE_SECRET = os.environ.get("LINE_CHANNEL_SECRET")
-# Ưu tiên gemini-1.5-flash để tránh bị giới hạn 20 request/ngày của gói free
-MODEL = os.environ.get("GEMINI_MODEL", "gemini-1.5-flash")
+
+# Sử dụng gemini-2.0-flash làm model tiêu chuẩn ổn định
+MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
 
 if not all([GEMINI_KEY, LINE_TOKEN, LINE_SECRET]):
     raise RuntimeError("Thiếu GEMINI_API_KEY, LINE_CHANNEL_ACCESS_TOKEN hoặc LINE_CHANNEL_SECRET")
 
-# 2. KHỞI TẠO CÁC CLIENT VÀ HANDLER (BẮT BUỘC TRƯỚC CÁC HÀM XỬ LÝ)
+# 2. KHỞI TẠO CLIENT VÀ HANDLER
 gemini_client = genai.Client(
     api_key=GEMINI_KEY,
     http_options={"api_version": "v1beta"}
@@ -40,8 +41,6 @@ gemini_client = genai.Client(
 line_configuration = Configuration(access_token=LINE_TOKEN)
 line_api_client = ApiClient(line_configuration)
 line_bot_api = MessagingApi(line_api_client)
-
-# line_handler được khởi tạo tại đây
 line_handler = WebhookHandler(LINE_SECRET)
 
 # 3. PROMPT HỆ THỐNG
@@ -73,16 +72,16 @@ def callback():
 
     return "OK", 200
 
-# 5. XỬ LÝ TIN NHẮN (Đã có line_handler ở trên)
+# 5. XỬ LÝ TIN NHẮN
 @line_handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
     user_text = event.message.text.strip()
     if not user_text:
         return
 
+    # Danh sách model thử nghiệm: ưu tiên MODEL chỉ định, fallback sang gemini-2.0-flash nếu khác
+    models_to_try = [MODEL] if MODEL == "gemini-2.0-flash" else [MODEL, "gemini-2.0-flash"]
     translated_text = ""
-    # Thử MODEL chính, nếu lỗi 429 sẽ tự động dùng gemini-1.5-flash
-    models_to_try = [MODEL] if MODEL == "gemini-1.5-flash" else [MODEL, "gemini-1.5-flash"]
 
     for model_name in models_to_try:
         try:
@@ -91,6 +90,7 @@ def handle_message(event):
                 "max_output_tokens": 1500,
                 "temperature": 0.1,
             }
+            # Tắt thinking budget nếu dùng gemini-2.5-flash để tăng tốc
             if "2.5" in model_name:
                 config_params["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
 
@@ -106,9 +106,9 @@ def handle_message(event):
 
         except APIError as e:
             if "429" in str(e):
-                logger.warning(f"Model {model_name} hết quota, chuyển sang model tiếp theo...")
+                logger.warning(f"Model {model_name} hết hạn ngạch quota, thử model tiếp theo...")
                 continue
-            logger.exception(f"Lỗi API: {model_name}")
+            logger.exception(f"Lỗi API ở model {model_name}")
             break
         except Exception:
             logger.exception("Lỗi không xác định")
@@ -127,7 +127,7 @@ def handle_message(event):
         )
     )
 
-# 6. KHỞI CHẠY APP
+# 6. KHỞI CHẠY SERVER
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     app.run(host="0.0.0.0", port=port)
