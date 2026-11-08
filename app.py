@@ -26,8 +26,8 @@ GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
 LINE_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN")
 LINE_SECRET = os.environ.get("LINE_CHANNEL_SECRET")
 
-# Cập nhật model theo khuyến nghị mới nhất từ thông báo API
-MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.8-flash")
+# Mặc định sử dụng model chuẩn hiện hành
+MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 
 if not all([GEMINI_KEY, LINE_TOKEN, LINE_SECRET]):
     raise RuntimeError("Thiếu GEMINI_API_KEY, LINE_CHANNEL_ACCESS_TOKEN hoặc LINE_CHANNEL_SECRET")
@@ -79,9 +79,8 @@ def handle_message(event):
     if not user_text:
         return
 
-    # Danh sách model thử nghiệm
-    candidate_models = [MODEL, "gemini-3.8-flash", "gemini-2.5-flash"]
-    # Loại bỏ trùng lặp giữ nguyên thứ tự
+    # Chỉ giữ các model hợp lệ đang hoạt động
+    candidate_models = [MODEL, "gemini-2.5-flash"]
     models_to_try = list(dict.fromkeys(candidate_models))
 
     translated_text = ""
@@ -93,8 +92,8 @@ def handle_message(event):
                 "max_output_tokens": 1500,
                 "temperature": 0.1,
             }
-            # Tắt thinking budget nếu có để tối ưu tốc độ
-            if any(ver in model_name for ver in ["2.5", "3."]):
+            # Tắt thinking budget để dịch nhanh ngay lập tức
+            if "2.5" in model_name:
                 config_params["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
 
             response = gemini_client.models.generate_content(
