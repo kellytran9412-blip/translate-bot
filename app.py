@@ -1,10 +1,6 @@
 import os
 import logging
-from dotenv import load_dotenv
 from flask import Flask, request, abort
-
-# Tự động nạp biến từ file .env
-load_dotenv()
 
 # Google GenAI SDK
 from google import genai
@@ -40,7 +36,7 @@ if not all([GEMINI_KEY, LINE_TOKEN, LINE_SECRET]):
     )
 
 # 2. KHỞI TẠO CLIENTS
-# Cấu hình v1beta để hỗ trợ system_instruction (developer instruction)
+# api_version='v1beta' để hỗ trợ system_instruction mà không bị lỗi 400
 gemini_client = genai.Client(
     api_key=GEMINI_KEY,
     http_options={"api_version": "v1beta"}
@@ -85,7 +81,7 @@ def callback():
 
     return "OK", 200
 
-# 5. XỬ LÝ SỰ KIỆN TIN NHẮN
+# 5. XỬ LÝ TIN NHẮN
 @line_handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
     user_text = event.message.text.strip()
@@ -96,7 +92,6 @@ def handle_message(event):
         line_bot_api = MessagingApi(api_client)
 
         try:
-            # Gọi Gemini API với tham số system_instruction
             response = gemini_client.models.generate_content(
                 model=MODEL,
                 contents=user_text,
@@ -111,7 +106,7 @@ def handle_message(event):
             if not translated_text:
                 translated_text = "❌ Không nhận được bản dịch."
 
-            # LINE giới hạn tối đa 5000 ký tự cho mỗi tin nhắn văn bản
+            # Giới hạn 5000 ký tự của LINE
             if len(translated_text) > 5000:
                 translated_text = translated_text[:4990] + "\n..."
 
@@ -133,5 +128,13 @@ def handle_message(event):
             logger.exception("Unexpected error")
             reply_msg = "❌ Hệ thống xảy ra lỗi. Vui lòng thử lại sau."
 
-        # Gửi phản hồi lại người dùng LINE
-        line_bot_
+        line_bot_api.reply_message(
+            ReplyMessageRequest(
+                reply_token=event.reply_token,
+                messages=[TextMessage(text=reply_msg)]
+            )
+        )
+
+# 6. KHỞI CHẠY SERVER CỤC BỘ
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8000))
