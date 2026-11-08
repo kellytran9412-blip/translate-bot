@@ -36,7 +36,6 @@ if not all([GEMINI_KEY, LINE_TOKEN, LINE_SECRET]):
     )
 
 # 2. KHỞI TẠO CLIENTS
-# api_version='v1beta' để hỗ trợ system_instruction mà không bị lỗi 400
 gemini_client = genai.Client(
     api_key=GEMINI_KEY,
     http_options={"api_version": "v1beta"}
@@ -88,53 +87,47 @@ def handle_message(event):
     if not user_text:
         return
 
-    with ApiClient(line_configuration) as api_client:
-        line_bot_api = MessagingApi(api_client)
-
-        try:
-            response = gemini_client.models.generate_content(
-                model=MODEL,
-                contents=user_text,
-                config=types.GenerateContentConfig(
-                    system_instruction=TRANSLATION_INSTRUCTION,
-                    max_output_tokens=3000,
-                    temperature=0.2
-                )
-            )
-
-            translated_text = (response.text or "").strip()
-            if not translated_text:
-                translated_text = "❌ Không nhận được bản dịch."
-
-            # Giới hạn 5000 ký tự của LINE
-            if len(translated_text) > 5000:
-                translated_text = translated_text[:4990] + "\n..."
-
-            reply_msg = translated_text
-
-        except APIError as e:
-            logger.exception("Gemini API error")
-            err_str = str(e).lower()
-            if "404" in err_str or "not found" in err_str:
-                reply_msg = "❌ Không tìm thấy model Gemini. Vui lòng kiểm tra lại tên model."
-            elif "429" in err_str or "quota" in err_str:
-                reply_msg = "❌ API đang quá tải hoặc hết hạn mức sử dụng (Quota)."
-            elif "400" in err_str and "key" in err_str:
-                reply_msg = "❌ GEMINI_API_KEY không hợp lệ."
-            else:
-                reply_msg = "❌ Lỗi dịch thuật từ AI. Vui lòng thử lại sau."
-
-        except Exception:
-            logger.exception("Unexpected error")
-            reply_msg = "❌ Hệ thống xảy ra lỗi. Vui lòng thử lại sau."
-
-        line_bot_api.reply_message(
-            ReplyMessageRequest(
-                reply_token=event.reply_token,
-                messages=[TextMessage(text=reply_msg)]
+    try:
+        response = gemini_client.models.generate_content(
+            model=MODEL,
+            contents=user_text,
+            config=types.GenerateContentConfig(
+                system_instruction=TRANSLATION_INSTRUCTION,
+                max_output_tokens=3000,
+                temperature=0.2
             )
         )
 
-# 6. KHỞI CHẠY SERVER CỤC BỘ
+        translated_text = (response.text or "").strip()
+
+        # Nếu không có nội dung dịch trả về thì dừng lại, không gửi tin
+        if not translated_text:
+            logger.warning("Gemini returned empty translation")
+            return
+
+        # Giới hạn 5000 ký tự của LINE
+        if len(translated_text) > 5000:
+            translated_text = translated_text[:4990] + "\n..."
+
+        # Chỉ gửi khi có bản dịch hợp lệ
+        with ApiClient(line_configuration) as api_client:
+            line_bot_api = MessagingApi(api_client)
+            line_bot_api.reply_message(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[TextMessage(text=translated_text)]
+                )
+            )
+
+    except APIError:
+        # Ghi log nội bộ trên server Render, không gửi tin nhắn lỗi về LINE
+        logger.exception("Gemini API error occurred - suppressed response to user")
+
+    except Exception:
+        # Ghi log nội bộ trên server Render, không gửi tin nhắn lỗi về LINE
+        logger.exception("Unexpected error occurred - suppressed response to user")
+
+# 6. KHỞI CHẠY SERVER
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
+    app.run(host="0.0.0.0", port=port)
