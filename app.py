@@ -2,12 +2,10 @@ import os
 import logging
 from flask import Flask, request, abort
 
-# Google GenAI SDK
 from google import genai
 from google.genai import types
 from google.genai.errors import APIError
 
-# LINE Bot SDK v3
 from linebot.v3 import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
 from linebot.v3.messaging import (
@@ -20,50 +18,44 @@ from linebot.v3.messaging import (
 from linebot.v3.webhooks import MessageEvent, TextMessageContent
 
 app = Flask(__name__)
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# 1. CẤU HÌNH BIẾN MÔI TRƯỜNG
 GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
 LINE_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN")
 LINE_SECRET = os.environ.get("LINE_CHANNEL_SECRET")
 MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 
-if not all([GEMINI_KEY, LINE_TOKEN, LINE_SECRET]):
-    raise RuntimeError(
-        "Thiếu GEMINI_API_KEY, LINE_CHANNEL_ACCESS_TOKEN hoặc LINE_CHANNEL_SECRET"
-    )
-
-# 2. KHỞI TẠO CLIENTS
+# Tái sử dụng client để giữ connection pool (Keep-Alive)
 gemini_client = genai.Client(
     api_key=GEMINI_KEY,
     http_options={"api_version": "v1beta"}
 )
 
 line_configuration = Configuration(access_token=LINE_TOKEN)
+line_api_client = ApiClient(line_configuration)
+line_bot_api = MessagingApi(line_api_client)
 line_handler = WebhookHandler(LINE_SECRET)
 
-# 3. PROMPT DỊCH THUẬT (SYSTEM INSTRUCTION)
-TRANSLATION_INSTRUCTION = """
-Bạn là chuyên gia dịch thuật tiếng Việt và tiếng Trung Phồn thể (Đài Loan).
+TRANSLATION_INSTRUCTION = """Chuyên gia dịch thuật song ngữ Việt - Trung Phồn thể (Đài Loan):
+- Việt -> Trung Phồn thể (Đài Loan).
+- Trung -> Việt.
+- Dịch chuẩn ngữ cảnh công ty, xưởng sản xuất, nhân sự.
+- Giữ nguyên tên riêng, số, mã, ngày tháng.
+- Chỉ trả lời duy nhất bản dịch, không thêm chú thích."""
 
-QUY TẮC:
-1. Nếu văn bản là tiếng Việt: Dịch sang tiếng Trung Phồn thể (繁體中文).
-2. Nếu văn bản là tiếng Trung: Dịch sang tiếng Việt.
-3. Sử dụng từ ngữ tự nhiên, phổ biến tại Đài Loan.
-4. Dịch chính xác thuật ngữ công ty, nhà máy, nhân sự, lao động và hành chính.
-5. Giữ nguyên tên riêng, mã số, ngày tháng, số tiền và định dạng xuống dòng khi phù hợp.
-6. Không tự ý thêm hoặc bỏ nội dung.
-7. Chỉ trả về bản dịch.
-8. Không giải thích, không thêm tiêu đề.
-"""
+# Cấu hình tối ưu tốc độ
+GEN_CONFIG = types.GenerateContentConfig(
+    system_instruction=TRANSLATION_INSTRUCTION,
+    max_output_tokens=1500,
+    temperature=0.1,
+    thinking_config=types.ThinkingConfig(thinking_budget=0)  # Tắt suy nghĩ ngầm
+)
 
 @app.route("/", methods=["GET"])
 def index():
-    return f"LINE Translation Bot ({MODEL}) is running!"
+    return "OK", 200
 
-# 4. LINE WEBHOOK ROUTE
 @app.route("/callback", methods=["POST"])
 def callback():
     signature = request.headers.get("X-Line-Signature")
@@ -75,12 +67,10 @@ def callback():
     try:
         line_handler.handle(body, signature)
     except InvalidSignatureError:
-        logger.warning("Invalid LINE signature")
         abort(400)
 
     return "OK", 200
 
-# 5. XỬ LÝ TIN NHẮN
 @line_handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
     user_text = event.message.text.strip()
@@ -91,43 +81,26 @@ def handle_message(event):
         response = gemini_client.models.generate_content(
             model=MODEL,
             contents=user_text,
-            config=types.GenerateContentConfig(
-                system_instruction=TRANSLATION_INSTRUCTION,
-                max_output_tokens=3000,
-                temperature=0.2
-            )
+            config=GEN_CONFIG
         )
 
         translated_text = (response.text or "").strip()
-
-        # Nếu không có nội dung dịch trả về thì dừng lại, không gửi tin
         if not translated_text:
-            logger.warning("Gemini returned empty translation")
             return
 
-        # Giới hạn 5000 ký tự của LINE
         if len(translated_text) > 5000:
             translated_text = translated_text[:4990] + "\n..."
 
-        # Chỉ gửi khi có bản dịch hợp lệ
-        with ApiClient(line_configuration) as api_client:
-            line_bot_api = MessagingApi(api_client)
-            line_bot_api.reply_message(
-                ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=[TextMessage(text=translated_text)]
-                )
+        line_bot_api.reply_message(
+            ReplyMessageRequest(
+                reply_token=event.reply_token,
+                messages=[TextMessage(text=translated_text)]
             )
+        )
 
-    except APIError:
-        # Ghi log nội bộ trên server Render, không gửi tin nhắn lỗi về LINE
-        logger.exception("Gemini API error occurred - suppressed response to user")
+    except (APIError, Exception):
+        logger.exception("Error processing translation")
 
-    except Exception:
-        # Ghi log nội bộ trên server Render, không gửi tin nhắn lỗi về LINE
-        logger.exception("Unexpected error occurred - suppressed response to user")
-
-# 6. KHỞI CHẠY SERVER
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     app.run(host="0.0.0.0", port=port)
